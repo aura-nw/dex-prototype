@@ -108,6 +108,7 @@ pub fn execute_create_pair(
 ) -> StdResult<Response> {
     let config: Config = CONFIG.load(deps.storage)?;
 
+    // don't allow to create pair with same token
     if asset_infos[0] == asset_infos[1] {
         return Err(StdError::generic_err("same asset"));
     }
