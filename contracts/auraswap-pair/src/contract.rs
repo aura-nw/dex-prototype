@@ -550,7 +550,7 @@ pub fn amount_of(coins: &[Coin], denom: String) -> Uint128 {
     }
 }
 
-fn compute_swap(
+fn  compute_swap(
     offer_pool: Uint128,
     ask_pool: Uint128,
     offer_amount: Uint128,
