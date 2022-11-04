@@ -365,10 +365,18 @@ pub fn swap(
     max_spread: Option<Decimal>,
     to: Option<Addr>,
 ) -> Result<Response, ContractError> {
+    // check amount of asset if it is native token
     offer_asset.assert_sent_native_token_balance(&info)?;
 
+    // load information of pair
+    // pair_info contains:
+    // asset_infos - information of 2 assets in the pair (token address or native token)
+    // contract_addr - the address of the pair contract
+    // liquidity_token - the address of the LP token corresponding to the pair
+    // asset_decimals - the decimals of 2 assets in the pair
     let pair_info: PairInfoRaw = PAIR_INFO.load(deps.storage)?;
 
+    // query pools - contains the information of 2 assets in the pair
     let pools: [Asset; 2] = pair_info.query_pools(&deps.querier, deps.api, env.contract.address)?;
 
     let offer_pool: Asset;
@@ -376,8 +384,13 @@ pub fn swap(
 
     let offer_decimal: u8;
     let ask_decimal: u8;
+
+    // This function is called as the trigger of Cw20ExecuteMsg::Send if offer_asset is a token OR
+    // Transfer with an amount of native token if offer_asset is a native token
+    // So, the amount of offer_pool was increased by the amount of offer_asset before these below lines of code 
     // If the asset balance is already increased
     // To calculated properly we should subtract user deposit from the pool
+    // decide in the pair, which pool is offer_pool and which is ask_pool
     if offer_asset.info.equal(&pools[0].info) {
         offer_pool = Asset {
             amount: pools[0].amount.checked_sub(offer_asset.amount)?,
@@ -400,7 +413,11 @@ pub fn swap(
         return Err(ContractError::AssetMismatch {});
     }
 
+    // calculate the offer_amount
     let offer_amount = offer_asset.amount;
+
+    // calculate the return amount, the spread amount and the commission amount using compute_swap function
+    // the return_amount is the amount of ask_pool that the user will receive
     let (return_amount, spread_amount, commission_amount) =
         compute_swap(offer_pool.amount, ask_pool.amount, offer_amount);
 
@@ -420,6 +437,7 @@ pub fn swap(
         ask_decimal,
     )?;
 
+    // The pair call Swap function and address 'to' will be the current pair contract address until the last operation
     let receiver = to.unwrap_or_else(|| sender.clone());
 
     let mut messages: Vec<CosmosMsg> = vec![];
@@ -481,17 +499,34 @@ pub fn query_pool(deps: Deps) -> Result<PoolResponse, ContractError> {
     Ok(resp)
 }
 
+/// Simulation returns the expected return amount, spread amount and commission amount
+/// @param offer_asset - the asset to swap, include: amount of asset and info of asset (token address or native token)
+/// @return return_amount - the expected return amount
+/// @return spread_amount - the expected spread amount
+/// @return commission_amount - the expected commission amount
 pub fn query_simulation(
     deps: Deps,
     offer_asset: Asset,
 ) -> Result<SimulationResponse, ContractError> {
+    // pair_info contains:
+    // asset_infos - information of 2 assets in the pair (token address or native token)
+    // contract_addr - the address of the pair contract
+    // liquidity_token - the address of the LP token corresponding to the pair
+    // asset_decimals - the decimals of 2 assets in the pair
     let pair_info: PairInfoRaw = PAIR_INFO.load(deps.storage)?;
 
+    // check the address of the asset to swap is correct
     let contract_addr = deps.api.addr_humanize(&pair_info.contract_addr)?;
+
+    // query pools - contains the information of 2 assets in the pair
     let pools: [Asset; 2] = pair_info.query_pools(&deps.querier, deps.api, contract_addr)?;
 
+    // offer_pool - the pool of asset that user provides
     let offer_pool: Asset;
+    // ask_pool - the pool of asset that user wants to receive
     let ask_pool: Asset;
+
+    // decide in the pair, which pool is offer_pool and which is ask_pool
     if offer_asset.info.equal(&pools[0].info) {
         offer_pool = pools[0].clone();
         ask_pool = pools[1].clone();
@@ -502,6 +537,10 @@ pub fn query_simulation(
         return Err(ContractError::AssetMismatch {});
     }
 
+    // calculate the expected return_amount, spread_amount and commission_amount
+    // return_amount - the expected return amount of ask asset
+    // spread_amount - the expected spread amount
+    // commission_amount - the expected commission amount
     let (return_amount, spread_amount, commission_amount) =
         compute_swap(offer_pool.amount, ask_pool.amount, offer_asset.amount);
 
@@ -550,6 +589,9 @@ pub fn amount_of(coins: &[Coin], denom: String) -> Uint128 {
     }
 }
 
+// User want to swap from 'offer' to 'ask'
+// Calculate the expected return_amount, spread_amount and commission_amount based on the formula
+// return_amount = offer_amount * (1 - spread) * ask_pool / (offer_pool + offer_amount)
 fn  compute_swap(
     offer_pool: Uint128,
     ask_pool: Uint128,
@@ -559,21 +601,30 @@ fn  compute_swap(
     let ask_pool: Uint256 = ask_pool.into();
     let offer_amount: Uint256 = offer_amount.into();
 
+    // Commission rate OR Fee amount for framework
     let commission_rate = Decimal256::from_str(COMMISSION_RATE).unwrap();
 
     // offer => ask
+    // EQUATION: B = (R_B - \frac{K}{R_A + A}) * (1 - F)
     // ask_amount = (ask_pool - cp / (offer_pool + offer_amount)) * (1 - commission_rate)
+
+    // cp is K constant in the EQUATION
     let cp: Uint256 = offer_pool * ask_pool;
+
+    // calculate the ask_amount without commission
     let return_amount: Uint256 = (Decimal256::from_uint256(ask_pool)
         - Decimal256::from_ratio(cp, offer_pool + offer_amount))
         * Uint256::one();
 
-    // calculate spread & commission
+    // calculate the spread_amount
+    // EQUATION: SPREAD = (A * \frac{R_B}{R_A}) - B
     let spread_amount: Uint256 =
         (offer_amount * Decimal256::from_ratio(ask_pool, offer_pool)) - return_amount;
+
+    // calculate the commission_amount
     let commission_amount: Uint256 = return_amount * commission_rate;
 
-    // commission will be absorbed to pool
+    // commission will be absorbed to pool and the currency will be the same as the ask currency
     let return_amount: Uint256 = return_amount - commission_amount;
     (
         return_amount.into(),
@@ -605,6 +656,7 @@ fn compute_offer_amount(
     let commission_rate = Decimal256::from_str(COMMISSION_RATE).unwrap();
 
     // ask => offer
+    // EQUATION: A = \frac{K * (1 - F)}{R_B - B} - R_A
     // offer_amount = cp / (ask_pool - ask_amount / (1 - commission_rate)) - offer_pool
     let cp: Uint256 = offer_pool * ask_pool;
 

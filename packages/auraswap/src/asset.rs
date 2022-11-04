@@ -126,6 +126,8 @@ impl AssetInfo {
             AssetInfo::Token { .. } => false,
         }
     }
+
+    // 
     pub fn query_pool(
         &self,
         querier: &QuerierWrapper,
@@ -275,19 +277,27 @@ impl PairInfoRaw {
         })
     }
 
+    // query information of a pair provided by the contract_addr - address of pair contract
+    // @contract_addr: address of pair contract
+    // @return: PairInfo - information of the pair (type and amount of each asset)
     pub fn query_pools(
         &self,
         querier: &QuerierWrapper,
         api: &dyn Api,
         contract_addr: Addr,
     ) -> StdResult<[Asset; 2]> {
+        // query the first asset information
         let info_0: AssetInfo = self.asset_infos[0].to_normal(api)?;
+
+        // query the second asset information
         let info_1: AssetInfo = self.asset_infos[1].to_normal(api)?;
         Ok([
+            // query the first asset information in the pool provided by the contract_addr
             Asset {
                 amount: info_0.query_pool(querier, api, contract_addr.clone())?,
                 info: info_0,
             },
+            // query the second asset information in the pool provided by the contract_addr
             Asset {
                 amount: info_1.query_pool(querier, api, contract_addr)?,
                 info: info_1,

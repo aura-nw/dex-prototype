@@ -123,6 +123,10 @@ pub fn receive_cw20(
     }
 }
 
+// The function will be used to begin the swap process.
+// It's called by the user who wants to swap assets in FE.
+// @param operations: the list of operations to be executed. Each operation is a pair of assets will be used to route the swap.
+// // Maybe the router will be BE, so the user will not need to know the list of operations and the contract does not
 pub fn execute_swap_operations(
     deps: DepsMut,
     env: Env,
@@ -131,17 +135,22 @@ pub fn execute_swap_operations(
     minimum_receive: Option<Uint128>,
     to: Option<Addr>,
 ) -> StdResult<Response> {
+    // the length of operations (number of swapping) must be greater than 0
     let operations_len = operations.len();
     if operations_len == 0 {
         return Err(StdError::generic_err("must provide operations"));
     }
 
-    // Assert the operations are properly set
+    // Check if the operations sequence is valid
     assert_operations(&operations)?;
 
+    // If the address 'to' is not provided, the default address 'to' is the sender
     let to = if let Some(to) = to { to } else { sender };
+
+    // The target asset (ask asset) is the last asset in the last operation
     let target_asset_info = operations.last().unwrap().get_target_asset_info();
 
+    
     let mut operation_index = 0;
     let mut messages: Vec<CosmosMsg> = operations
         .into_iter()
@@ -336,6 +345,9 @@ fn reverse_simulate_return_amount(
     Ok(res.offer_amount)
 }
 
+// This function is check if the operations in the router is executed samelessly
+// The ask asset of the previous operation should be the offer asset of the next operation
+// The last ask asset of this sequence should be 1 asset
 fn assert_operations(operations: &[SwapOperation]) -> StdResult<()> {
     let mut ask_asset_map: HashMap<String, bool> = HashMap::new();
     for operation in operations.iter() {
