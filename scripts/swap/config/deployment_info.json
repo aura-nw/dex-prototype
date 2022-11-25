@@ -1,0 +1,26 @@
+{
+	"aura_token_A": {
+		"code_id": 730,
+		"address": "aura1c7fycp5q0ydst0ukgt7sn69utagrpp6374mv4g9t87tg5eeyu4zq9klg6k"
+	},
+	"aura_token_B": {
+		"code_id": 730,
+		"address": "aura1zz8pvrr7qyul7wcucaq0mva056z3f9pr8q2jcqf8qjzqtvtdrt5s7ee6vd"
+	},
+	"aura_pair_1": {
+		"code_id": 0,
+		"address": ""
+	},
+	"aura_LP_token_1": {
+		"code_id": 730,
+		"address": ""
+	},
+	"aura_factory": {
+		"code_id": 0,
+		"address": ""
+	},
+	"aura_router": {
+		"code_id": 0,
+		"address": ""
+	}
+}
